@@ -1,13 +1,14 @@
 [project]
-name = "nanobot-ai"
-version = "0.1.3.post4"
-description = "A lightweight personal AI assistant framework"
+name = "said-nanobot"
+version = "0.1.0"
+description = "nanobot fork with Solana/SAID tools built-in - on-chain identity for AI agents"
 requires-python = ">=3.11"
 license = {text = "MIT"}
 authors = [
+    {name = "SAID Protocol"},
     {name = "nanobot contributors"}
 ]
-keywords = ["ai", "agent", "chatbot"]
+keywords = ["ai", "agent", "chatbot", "solana", "said", "identity", "blockchain"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
@@ -41,8 +42,14 @@ dev = [
     "ruff>=0.1.0",
 ]
 
+[project.urls]
+Homepage = "https://www.saidprotocol.com"
+Repository = "https://github.com/kaiclawd/said-nanobot"
+Documentation = "https://www.saidprotocol.com/docs.html"
+
 [project.scripts]
 nanobot = "nanobot.cli.commands:app"
+said-nanobot = "nanobot.cli.commands:app"
 
 [build-system]
 requires = ["hatchling"]
