@@ -9,8 +9,8 @@ Updated for SAID Protocol v2 API (July 2026):
 
 import json
 import os
-import urllib.request
 import urllib.error
+import urllib.request
 from pathlib import Path
 from typing import Any
 
@@ -466,11 +466,87 @@ class GetMyIdentityTool(Tool):
         )
 
 
+class GetEnforcementTool(Tool):
+    """Query on-chain enforcement data (staking/slashing) for any agent."""
+
+    @property
+    def name(self) -> str:
+        return "get_said_enforcement"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Check on-chain enforcement data for a SAID agent. "
+            "Returns staking collateral (SOL at risk), slashing history, and enforcement tier. "
+            "This is SAID's unique differentiator — real economic consequences for bad behavior. "
+            "Use BEFORE high-value transactions or hiring agents to verify they have skin in the game."
+        )
+
+    @property
+    def parameters(self) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "wallet": {
+                    "type": "string",
+                    "description": "Solana wallet address to check enforcement for",
+                }
+            },
+            "required": ["wallet"],
+        }
+
+    async def execute(self, wallet: str) -> str:
+        data = _fetch_json(f"{SAID_API}/api/enforcement/{wallet}")
+        if not data:
+            return json.dumps(
+                {
+                    "wallet": wallet,
+                    "staked": 0,
+                    "slashed": False,
+                    "slash_count": 0,
+                    "enforcement_tier": "none",
+                    "note": "No enforcement data found. Agent may not be registered or has no stake.",
+                }
+            )
+
+        staked = data.get("stakedAmount", data.get("staked", data.get("totalStaked", 0)))
+        slash_count = data.get("slashCount", data.get("slashes", data.get("slashEvents", 0)))
+        slashed_explicit = data.get("slashed")
+        slashed = slashed_explicit if slashed_explicit is not None else slash_count > 0
+
+        result = {
+            "wallet": wallet,
+            "staked": staked,
+            "slashed": slashed,
+            "slash_count": slash_count,
+            "enforcement_tier": "economic" if staked > 0 else data.get("enforcementTier", "none"),
+            "stake_pda": data.get("stakePda"),
+            "last_slash_slot": data.get("lastSlashSlot"),
+        }
+
+        # Add warnings
+        if slashed:
+            result["WARNING"] = (
+                f"This agent has been SLASHED {slash_count}x. "
+                "Real economic enforcement was applied. Exercise extreme caution."
+            )
+        elif staked > 0:
+            result["note"] = (
+                f"Agent has {staked:.2f} SOL staked as collateral. "
+                "Economic skin-in-the-game confirmed."
+            )
+        else:
+            result["note"] = "Agent has no economic stake. Reputation-only trust."
+
+        return json.dumps(result)
+
+
 # Export all tools
 SOLANA_TOOLS = [
     GetBalanceTool,
     VerifyAgentTool,
     GetTrustScoreTool,
+    GetEnforcementTool,
     DiscoverAgentsTool,
     GetLeaderboardTool,
     GetNetworkStatsTool,

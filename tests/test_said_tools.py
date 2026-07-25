@@ -9,6 +9,7 @@ from nanobot.agent.tools.solana import (
     GetBalanceTool,
     VerifyAgentTool,
     GetTrustScoreTool,
+    GetEnforcementTool,
     DiscoverAgentsTool,
     GetLeaderboardTool,
     GetNetworkStatsTool,
@@ -142,9 +143,101 @@ class TestRegisterAgentTool:
 
 
 class TestToolCount:
-    """Verify we have 9 SAID tools (up from 6 in v1)."""
+    """Verify we have 10 SAID tools (up from 9 in v1)."""
 
-    def test_nine_tools_available(self):
+    def test_ten_tools_available(self):
         from nanobot.agent.tools.solana import SOLANA_TOOLS
 
-        assert len(SOLANA_TOOLS) == 9
+        assert len(SOLANA_TOOLS) == 10
+
+
+class TestGetEnforcementTool:
+    def test_name(self):
+        tool = GetEnforcementTool()
+        assert tool.name == "get_said_enforcement"
+
+    def test_parameters_have_wallet(self):
+        tool = GetEnforcementTool()
+        params = tool.parameters
+        assert "wallet" in params["properties"]
+        assert "wallet" in params["required"]
+
+    def test_description_mentions_staking_and_slashing(self):
+        tool = GetEnforcementTool()
+        desc = tool.description.lower()
+        assert "staking" in desc or "stake" in desc
+        assert "slash" in desc
+
+    @patch("nanobot.agent.tools.solana._fetch_json")
+    def test_returns_staked_agent_data(self, mock_fetch):
+        mock_fetch.return_value = {
+            "stakedAmount": 5.0,
+            "slashed": False,
+            "slashCount": 0,
+            "enforcementTier": "economic",
+            "stakePda": "7Xf3...test",
+        }
+        tool = GetEnforcementTool()
+        result = json.loads(asyncio.run(tool.execute("STAKED")))
+
+        assert result["staked"] == 5.0
+        assert result["slashed"] is False
+        assert result["slash_count"] == 0
+        assert result["enforcement_tier"] == "economic"
+        assert "skin-in-the-game" in result["note"]
+
+    @patch("nanobot.agent.tools.solana._fetch_json")
+    def test_detects_slashed_agent(self, mock_fetch):
+        mock_fetch.return_value = {
+            "stakedAmount": 2.0,
+            "slashed": True,
+            "slashCount": 3,
+            "enforcementTier": "economic",
+        }
+        tool = GetEnforcementTool()
+        result = json.loads(asyncio.run(tool.execute("SLASHED")))
+
+        assert result["slashed"] is True
+        assert result["slash_count"] == 3
+        assert "WARNING" in result
+        assert "3x" in result["WARNING"]
+
+    @patch("nanobot.agent.tools.solana._fetch_json")
+    def test_returns_none_for_unstaked(self, mock_fetch):
+        mock_fetch.return_value = {
+            "stakedAmount": 0,
+            "slashCount": 0,
+            "slashed": False,
+        }
+        tool = GetEnforcementTool()
+        result = json.loads(asyncio.run(tool.execute("UNSTAKED")))
+
+        assert result["staked"] == 0
+        assert result["slashed"] is False
+        assert result["enforcement_tier"] == "none"
+        assert "no economic stake" in result["note"]
+
+    @patch("nanobot.agent.tools.solana._fetch_json")
+    def test_returns_default_when_api_returns_none(self, mock_fetch):
+        mock_fetch.return_value = None
+        tool = GetEnforcementTool()
+        result = json.loads(asyncio.run(tool.execute("UNKNOWN")))
+
+        assert result["staked"] == 0
+        assert result["slashed"] is False
+        assert result["slash_count"] == 0
+        assert result["enforcement_tier"] == "none"
+
+    @patch("nanobot.agent.tools.solana._fetch_json")
+    def test_derives_slashed_from_slash_count(self, mock_fetch):
+        """When slashed field is not present, derive from slashCount."""
+        mock_fetch.return_value = {
+            "stakedAmount": 1.0,
+            "slashCount": 2,
+            # Note: no 'slashed' field
+        }
+        tool = GetEnforcementTool()
+        result = json.loads(asyncio.run(tool.execute("DERIVED")))
+
+        assert result["slashed"] is True
+        assert result["slash_count"] == 2
